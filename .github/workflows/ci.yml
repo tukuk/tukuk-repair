@@ -1,0 +1,13 @@
+name: Tukuk Repair CI
+
+on: [push, pull_request]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Syntax check bash script
+        run: bash -n repair.sh
+      - name: Echo success
+        run: echo "Repair script syntax validated."

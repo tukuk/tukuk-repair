@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ==============================================================================
 # Tukuk Server Repair & Self-Healing Agent
-# Diagnoses and repairs backend services, PM2 processes, permissions, and hygiene.
+# Diagnoses and repairs backend services, systemd units, permissions, and hygiene.
 # ==============================================================================
 set -euo pipefail
 
@@ -14,47 +14,56 @@ if [ -d "$APP_DIR" ]; then
   echo "[-] Fixing permissions on $APP_DIR ..."
   chown -R tukuk:tukuk "$APP_DIR" || true
   chmod -R 755 "$APP_DIR" || true
-  chmod -R 775 "$APP_DIR/data" "$APP_DIR/content" 2>/dev/null || true
+  chmod -R a+rwX "$APP_DIR/data" "$APP_DIR/content" "$APP_DIR/meili_data" 2>/dev/null || true
   echo "[+] Permissions fixed."
 fi
 
-# 2. Check Meilisearch service
+# 2. Check and ensure MEILI_UPGRADE_DB in .env
+if [ -f "$APP_DIR/.env" ]; then
+  if ! grep -q "MEILI_UPGRADE_DB" "$APP_DIR/.env"; then
+    echo "MEILI_UPGRADE_DB=true" >> "$APP_DIR/.env"
+    echo "[+] Added MEILI_UPGRADE_DB=true to .env"
+  fi
+fi
+
+# 3. Check Meilisearch service
 if command -v systemctl >/dev/null 2>&1; then
   if systemctl list-unit-files | grep -q meilisearch; then
     if ! systemctl is-active --quiet meilisearch; then
       echo "[!] Meilisearch is inactive. Starting Meilisearch..."
-      systemctl start meilisearch || true
+      systemctl restart meilisearch || true
     else
       echo "[+] Meilisearch is active."
     fi
   fi
-fi
 
-# 3. Check PM2 / Node backend (tukuk-os)
-if command -v npx >/dev/null 2>&1 && [ -d "$APP_DIR" ]; then
-  echo "[-] Checking PM2 processes..."
-  cd "$APP_DIR"
-  if npx pm2 status | grep -q "tukuk-os"; then
-    echo "[+] tukuk-os is managed by PM2. Verifying health..."
-    if ! curl -sf -m 5 "http://127.0.0.1:3000/health" >/dev/null; then
-      echo "[!] /health endpoint failed or port 3000 busy. Restarting PM2 process..."
-      npx pm2 restart tukuk-os || npx pm2 start index.js --name tukuk-os
+  # 4. Check Tukuk-OS service
+  if systemctl list-unit-files | grep -q tukuk-os; then
+    if ! systemctl is-active --quiet tukuk-os; then
+      echo "[!] tukuk-os is inactive. Starting tukuk-os..."
+      systemctl restart tukuk-os || true
     else
-      echo "[+] tukuk-os /health responding successfully."
+      echo "[+] tukuk-os is active."
     fi
-  else
-    echo "[!] tukuk-os not found in PM2. Starting application..."
-    PORT=3000 npx pm2 start index.js --name tukuk-os || true
-    npx pm2 save || true
+  fi
+
+  # 5. Check Cloudflared service
+  if systemctl list-unit-files | grep -q cloudflared; then
+    if ! systemctl is-active --quiet cloudflared; then
+      echo "[!] cloudflared is inactive. Starting cloudflared..."
+      systemctl restart cloudflared || true
+    else
+      echo "[+] cloudflared is active."
+    fi
   fi
 fi
 
-# 4. Log and Temp hygiene
-echo "[-] Cleaning stale logs and temp artifacts..."
-find /tmp -name "tukuk-os-watchdog.*" -mmin +120 -delete 2>/dev/null || true
-if command -v npx >/dev/null 2>&1; then
-  npx pm2 flush 2>/dev/null || true
+# 6. Verify health
+echo "[-] Verifying local health..."
+if curl -sf -m 10 http://127.0.0.1:3000/ >/dev/null 2>&1; then
+  echo "[+] Tukuk-OS is responding cleanly on port 3000."
+else
+  echo "[!] Warning: Port 3000 not answering yet. Check journalctl -u tukuk-os.service"
 fi
-echo "[+] Log and temp cleanup complete."
 
-echo "=== [Tukuk Repair] Repair & Self-Healing Sequence Completed Successfully ==="
+echo "=== [Tukuk Repair] Repair sequence completed ==="

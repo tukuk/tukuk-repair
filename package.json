@@ -1,0 +1,15 @@
+{
+  "name": "tukuk-repair",
+  "version": "1.0.0",
+  "description": "Tukuk Server Repair & Self-Healing Agent for automated diagnostics, permissions, and service stability",
+  "main": "repair.sh",
+  "scripts": {
+    "test": "bash -n repair.sh"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git@github.com:tukuk/tukuk-repair.git"
+  },
+  "author": "Tukuk",
+  "license": "MIT"
+}
